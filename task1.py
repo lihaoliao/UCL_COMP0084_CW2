@@ -17,8 +17,8 @@ def preprocessing(text):
     tokens = text.split()
     filtered_tokens = [word for word in tokens if word not in stop_words]
     remove_text = Counter(filtered_tokens)
-    with open('remove_stop_word_vocabulary.txt', 'w', encoding='utf-8') as file:
-        file.write('\n'.join(remove_text.keys()))
+    # with open('remove_stop_word_vocabulary.txt', 'w', encoding='utf-8') as file:
+    #     file.write('\n'.join(remove_text.keys()))
     return remove_text
 
 def read_and_process_tsv(file_path):

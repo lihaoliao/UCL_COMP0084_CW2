@@ -3,3 +3,5 @@
 /test-queries.tsv
 /train_data.tsv
 /validation_data.tsv
+draft.txt
+remove_stop_word_vocabulary.txt
