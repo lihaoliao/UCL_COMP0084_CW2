@@ -16,7 +16,7 @@ class LogisticRegression:
         self.num_iterations = num_iterations
         self.w = None
         self.b = None
-        self.tol = 1.0e-4
+        self.tol = 1.0e-5
         self.iterations = 0
         self.loss_history = []
 
@@ -135,12 +135,12 @@ def sampling_non_rel_passage(data, sample_size):
     for qid, queries in data.items():
         new_data[qid] = {}
         for query, pid_passage in queries.items():
-            # take all if less than five
             sampled_pids = random.sample(list(pid_passage.keys()), min(sample_size, len(pid_passage)))
             new_data[qid][query] = {pid: pid_passage[pid] for pid in sampled_pids}
     return new_data
 # 比例
 sampled_train_non_rel_qid_query_pid_passage = sampling_non_rel_passage(train_non_rel_qid_query_pid_passage, 1)
+# print(len(sampled_train_non_rel_qid_query_pid_passage))
 
 # word embedding model training
 def create_query_passage_list(sampled_train_non_rel_qid_query_pid_passage, sampled_train_rel_qid_query_pid_passage):
@@ -168,6 +168,33 @@ def create_query_passage_list(sampled_train_non_rel_qid_query_pid_passage, sampl
 train_query_list, train_passage_list, train_qid_to_terms, train_pid_to_terms = create_query_passage_list(sampled_train_non_rel_qid_query_pid_passage, train_rel_qid_query_pid_passage)
 validation_query_list, validation_passage_list, validation_qid_to_terms, validation_pid_to_terms = create_query_passage_list(validation_non_rel_qid_query_pid_passage, validation_rel_qid_query_pid_passage)
 
+def build_qid_pid_rel_dict(data, rel):
+    qid_pid_rel = {}
+    for qid, query_dict in data.items():
+        qid_pid_rel[qid] = {}
+        for query, pid_passage in query_dict.items():
+            for pid, passage in pid_passage.items():
+                qid_pid_rel[qid][pid] = rel 
+    return qid_pid_rel
+
+# 使用函数构建字典
+sampled_train_non_rel_qid_pid_rel = build_qid_pid_rel_dict(sampled_train_non_rel_qid_query_pid_passage, 0)
+train_rel_qid_pid_rel = build_qid_pid_rel_dict(train_rel_qid_query_pid_passage,1)
+
+def merge_dicts(dict1, dict2):
+    merged_dict = {**dict1}  # 复制第一个字典
+    for qid, pid_rel in dict2.items():
+        if qid in merged_dict:
+            # 如果 qid 已存在，则合并 pid 和 rel 值
+            merged_dict[qid].update(pid_rel)
+        else:
+            # 如果 qid 不存在，直接添加到结果字典中
+            merged_dict[qid] = pid_rel
+    return merged_dict
+
+# 使用函数合并字典
+merged_qid_pid_rel = merge_dicts(sampled_train_non_rel_qid_pid_rel, train_rel_qid_pid_rel)
+
 del sampled_train_non_rel_qid_query_pid_passage, train_rel_qid_query_pid_passage, validation_non_rel_qid_query_pid_passage, validation_rel_qid_query_pid_passage
 
 # print("Number of unique queries in training data:", len(train_query_list))
@@ -180,7 +207,7 @@ training_corpus = train_query_list + train_passage_list
 # print(train_query_list[:1])
 # print(train_passage_list[:1])
 # iter 10 times
-train_model = Word2Vec(sentences=training_corpus, vector_size=100, window=5, min_count=1, sg=1, workers=4, epochs=20)
+train_model = Word2Vec(sentences=training_corpus, vector_size=100, window=5, min_count=1, sg=1, workers=4, epochs=10)
 
 # Compute query(/passage) embeddings
 def get_average_embedding(word2vec_model, terms):
@@ -204,10 +231,10 @@ def calculate_features_and_labels(qid_embeddings, pid_embeddings, qid_to_terms, 
     for qid, pid_rel_dict in rel_dict.items():
         for pid, rel in pid_rel_dict.items():
             if qid in qid_embeddings and pid in pid_embeddings:
-                qid_embedding = qid_embeddings[qid]
-                pid_embedding = pid_embeddings[pid]
-                # use embedding and term frequency as features
-                feature_vector = np.concatenate([qid_embedding, pid_embedding])
+                qid_terms_embedding = qid_embeddings[qid]
+                pid_terms_embedding = pid_embeddings[pid]
+                # use embedding
+                feature_vector = np.concatenate([qid_terms_embedding, pid_terms_embedding])
                 # append qid, pid, feature_vector, and label to the rows list
                 rows.append((qid, pid, feature_vector, rel))
 
@@ -217,15 +244,15 @@ def calculate_features_and_labels(qid_embeddings, pid_embeddings, qid_to_terms, 
     return df
 
 # 使用更新的函数获取DataFrame、特征矩阵和标签数组
-train_data_df = calculate_features_and_labels(train_qid_embeddings, train_pid_embeddings, train_qid_to_terms, train_pid_to_terms, train_rel_dict)
+train_data_df = calculate_features_and_labels(train_qid_embeddings, train_pid_embeddings, train_qid_to_terms, train_pid_to_terms, merged_qid_pid_rel)
 validation_data_df = calculate_features_and_labels(validation_qid_embeddings, validation_pid_embeddings, validation_qid_to_terms, validation_pid_to_terms, validation_rel_dict)
 
-# print("Shape of training features:", np.stack(train_data_df['features'].values).shape)
-# print("Shape of training labels:", train_data_df['label'].values.shape)
-# print("Shape of validation features:", np.stack(validation_data_df['features'].values).shape)
-# print("Shape of validation labels:",validation_data_df['label'].values.shape)
+print("Shape of training features:", np.stack(train_data_df['features'].values).shape)
+print("Shape of training labels:", train_data_df['label'].values.shape)
+print("Shape of validation features:", np.stack(validation_data_df['features'].values).shape)
+print("Shape of validation labels:",validation_data_df['label'].values.shape)
 
-learning_rates = [0.0001, 0.001, 0.01, 0.1, 1, 10]
+learning_rates = [0.001, 0.01, 0.1, 0.5, 0.8 , 1]
 loss_histories = {}
 stop_iteration_times = {}  
 
@@ -277,13 +304,13 @@ sorted_results_dfs_binrel = copy.deepcopy(sorted_results_dfs_prob)
 for lr, df in sorted_results_dfs_binrel.items():
     df['prob'] = np.where(df['prob'] >= 0.5, 1.0, 0.0)  
 
-for lr, df in sorted_results_dfs_binrel.items():    
-    print(lr , ":sorted_results_dfs_pro: \n", sorted_results_dfs_prob[lr][:1])
+# for lr, df in sorted_results_dfs_binrel.items():    
+#     print(lr , ":sorted_results_dfs_pro: \n", sorted_results_dfs_prob[lr][:1])
     # print("sorted_results_dfs_rel: \n", sorted_results_dfs_binrel[lr][:1]) 
 # print("sorted_results_def_len len: ", len(sorted_results_dfs_prob[0.1]))
 
-# lr_groups = [learning_rates[:3], learning_rates[3:]]
-lr_groups = [learning_rates[:6]]
+lr_groups = [learning_rates[:3], learning_rates[3:6]]
+# lr_groups = [learning_rates[:6]]
 
 for i, lrs in enumerate(lr_groups):
     plt.figure(figsize=(10, 6))
@@ -294,7 +321,7 @@ for i, lrs in enumerate(lr_groups):
     plt.ylabel('Loss')
     plt.legend()
     plt.title(f'Loss vs. Iterations for learning rates')
-    plt.savefig(f"loss_group_unfix-1.pdf", format='pdf')
+    plt.savefig(f"loss_group_unfix-1{i+1}.pdf", format='pdf')
     plt.show()
 
 # qid_to_pid_rel = lr: {qid:{pid:rel}} 
@@ -302,7 +329,6 @@ qid_to_pid_rel = {}
 for lr, df in sorted_results_dfs_binrel.items():
     qid_to_pid_rel[lr] = {qid: dict(zip(group['pid'], group['prob']))
                           for qid, group in df.groupby('qid')}
-    
 
 def cal_AP(LR_rank, qid_and_pid_and_rel):
     total_AP_for_each_query = 0
