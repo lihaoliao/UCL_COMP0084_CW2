@@ -277,6 +277,61 @@ for qid, pid_prob_map in qid_pid_prob_map.items():
     sorted_pids = sorted(pid_prob_map.items(), key=lambda x: x[1], reverse=True)
     sorted_qid_pid_prob_map[qid] = sorted_pids
 
+
+def cal_AP(CNN_rank, qid_and_pid_and_rel):
+    total_AP_for_each_query = 0
+    for qid,pids in qid_and_pid_and_rel.items():
+        counted_passage = 0
+        found_rel_passage = 0
+        cur_query_precision = 0
+        for pid, prob in CNN_rank[qid]:
+            counted_passage += 1
+            if qid_and_pid_and_rel[qid][pid] == 1.0:
+                found_rel_passage += 1
+                cur_query_precision += found_rel_passage / counted_passage  
+        if(found_rel_passage != 0):
+            total_AP_for_each_query += cur_query_precision / found_rel_passage   
+                
+    return total_AP_for_each_query / len(qid_and_pid_and_rel)
+
+def cal_NDCG(CNN_rank, qid_and_pid_and_rel):
+    total_NDCG_for_each_query = 0
+    for qid, pids in qid_and_pid_and_rel.items():
+        counted_passage = 0
+        counted_passage_opt = 0
+        rel_count = 0
+        DCG = 0
+        opt_DCG = 0
+        for pid, prob in CNN_rank[qid]:
+            counted_passage += 1
+            reli = 0
+            if qid_and_pid_and_rel[qid][pid] == 1.0:
+                rel_count += 1
+                reli = 1 
+            DCG += (2 ** reli - 1) / np.log2(counted_passage + 1)   
+        total_passage_count = len(CNN_rank[qid])
+        # create an array set rel_count length as 1 and rest as 0
+        optimal_relevance = [1 if i < rel_count else 0 for i in range(total_passage_count)]    
+        for rel in optimal_relevance:
+            counted_passage_opt += 1
+            opt_DCG += (2 ** rel - 1) / np.log2(counted_passage_opt + 1)    
+             
+        NDCG = DCG / opt_DCG if opt_DCG != 0 else 0
+        total_NDCG_for_each_query += NDCG       
+
+    return total_NDCG_for_each_query / len(qid_and_pid_and_rel)
+
+# LR_AP = {lr:AP}
+CNN_AP = cal_AP(sorted_qid_pid_prob_map, validation_dataset.qid_pid_rel_map)
+CNN_NDCG = cal_NDCG(sorted_qid_pid_prob_map, validation_dataset.qid_pid_rel_map)
+# for lr in qid_to_pid_rel.keys():
+#     CNN_AP[lr] = cal_AP(qid_to_pid_rel[lr], validation_rel_dict)
+#     CNN_NDCG[lr] = cal_NDCG(qid_to_pid_rel[lr], validation_rel_dict)
+
+    
+print('AP',CNN_AP)    
+print('NDCG',CNN_NDCG)
+
 end()    
    
         

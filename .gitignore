@@ -7,3 +7,4 @@ draft.txt
 remove_stop_word_vocabulary.txt
 leanring.py
 数据集/hymenoptera_data.zip.baiduyun.p.downloading
+.vector_cache/glove.6B.100d.txt.pt
