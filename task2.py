@@ -321,7 +321,7 @@ for i, lrs in enumerate(lr_groups):
     plt.ylabel('Loss')
     plt.legend()
     plt.title(f'Loss vs. Iterations for learning rates')
-    plt.savefig(f"loss_group_unfix-1{i+1}.pdf", format='pdf')
+    # plt.savefig(f"loss_group_unfix-1{i+1}.pdf", format='pdf')
     plt.show()
 
 # qid_to_pid_rel = lr: {qid:{pid:rel}} 
