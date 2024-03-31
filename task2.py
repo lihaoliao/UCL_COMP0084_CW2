@@ -139,7 +139,7 @@ def sampling_non_rel_passage(data, sample_size):
             new_data[qid][query] = {pid: pid_passage[pid] for pid in sampled_pids}
     return new_data
 # 比例
-sampled_train_non_rel_qid_query_pid_passage = sampling_non_rel_passage(train_non_rel_qid_query_pid_passage, 1)
+sampled_train_non_rel_qid_query_pid_passage = sampling_non_rel_passage(train_non_rel_qid_query_pid_passage, 5)
 # print(len(sampled_train_non_rel_qid_query_pid_passage))
 
 # word embedding model training
@@ -264,7 +264,11 @@ mean = np.mean(train_X, axis=0)
 std = np.std(train_X, axis=0)
 std += 1e-10
 train_X_normalized = (train_X - mean) / std
-validation_X_normalized = (validation_X - mean) / std
+
+mean_v = np.mean(validation_X, axis=0)
+std_v = np.std(validation_X, axis=0)
+std += 1e-10
+validation_X_normalized = (validation_X - mean_v) / std_v
 # print("train_X_normalized: ", train_X_normalized[:1])
 # print("validation_X_normalized: ", validation_X_normalized[:1])
 # print("train_X", train_X[:1])
@@ -276,7 +280,7 @@ validation_pids = validation_data_df['pid'].values
 # store results for each learning rate
 results_dfs = {}  
 for lr in learning_rates:
-    model = LogisticRegression(learning_rate=lr, num_iterations=300)
+    model = LogisticRegression(learning_rate=lr, num_iterations=500)
     model.fit(train_X_normalized, train_y, None, learning_rate=lr)
     # loss histories for each learning rate
     loss_histories[lr] = model.loss_history
@@ -310,6 +314,7 @@ for lr, df in sorted_results_dfs_binrel.items():
 # print("sorted_results_def_len len: ", len(sorted_results_dfs_prob[0.1]))
 
 lr_groups = [learning_rates[:3], learning_rates[3:6]]
+# lr_groups = [learning_rates[3:4], learning_rates[5:6]]
 # lr_groups = [learning_rates[:6]]
 
 for i, lrs in enumerate(lr_groups):
@@ -321,7 +326,7 @@ for i, lrs in enumerate(lr_groups):
     plt.ylabel('Loss')
     plt.legend()
     plt.title(f'Loss vs. Iterations for learning rates')
-    # plt.savefig(f"loss_group_unfix-1{i+1}.pdf", format='pdf')
+    # plt.savefig(f"loss_group_unfix-lr{i+1}.pdf", format='pdf')
     plt.show()
 
 # qid_to_pid_rel = lr: {qid:{pid:rel}} 
@@ -338,7 +343,7 @@ def cal_AP(LR_rank, qid_and_pid_and_rel):
         cur_query_precision = 0
         for pid,rel in LR_rank[qid].items():
             counted_passage += 1
-            if rel == 1.0 and qid_and_pid_and_rel[qid][pid] == 1:
+            if qid_and_pid_and_rel[qid][pid] == 1:
                 found_rel_passage += 1
                 cur_query_precision += found_rel_passage / counted_passage  
         if(found_rel_passage != 0):
@@ -383,6 +388,89 @@ for lr in qid_to_pid_rel.keys():
 print('AP',LR_AP)    
 print('NDCG',LR_NDCG)
 print(stop_iteration_times)
+
+# ==================================== LR.txt ====================================
+
+model = LogisticRegression(learning_rate=0.1, num_iterations=300)
+model.fit(train_X_normalized, train_y, None, learning_rate=lr)
+
+test_qid_terms = {}
+with open('test-queries.tsv', 'r', encoding='utf-8') as file:
+    tsv_reader = csv.reader(file, delimiter='\t')  
+    for row in tsv_reader:
+        qid = row[0]  
+        terms = preprocessing(row[1])  
+        test_qid_terms[qid] = terms
+
+candidate_pid_terms = {}
+qid_pid_connection = {}        
+with open('candidate_passages_top1000.tsv', 'r', encoding='utf-8') as file:     
+    tsv_reader = csv.reader(file, delimiter='\t') 
+    for row in tsv_reader:
+        qid = row[0]
+        if row[0] in test_qid_terms:
+            pid = row[1]
+            terms = preprocessing(row[3])
+            candidate_pid_terms[pid] = terms
+            if qid not in qid_pid_connection:
+                qid_pid_connection[qid] = []
+            qid_pid_connection[qid].append(pid)        
+
+test_qid_embeddings = {qid: get_average_embedding(train_model, terms) for qid, terms in test_qid_terms.items()}
+test_pid_embeddings = {pid: get_average_embedding(train_model, terms) for pid, terms in candidate_pid_terms.items()}
+
+def calculate_features_and_labels(qid_embeddings, pid_embeddings):
+    rows = []
+
+    for qid, pid_list in qid_pid_connection.items():
+        for pid in pid_list:
+            if qid in qid_embeddings and pid in pid_embeddings:
+                qid_terms_embedding = qid_embeddings[qid]
+                pid_terms_embedding = pid_embeddings[pid]
+                # use embedding
+                feature_vector = np.concatenate([qid_terms_embedding, pid_terms_embedding])
+                # append qid, pid, feature_vector, and label to the rows list
+                rows.append((qid, pid, feature_vector))
+
+    # Create a DataFrame from the rows
+    df = pd.DataFrame(rows, columns=['qid', 'pid', 'features'])
+
+    return df
+
+qid_pid_features_df = calculate_features_and_labels(test_qid_embeddings, test_pid_embeddings)
+qid_pid_X = np.stack(qid_pid_features_df['features'].values)
+mean = np.mean(qid_pid_X, axis=0)
+std = np.std(qid_pid_X, axis=0)
+std += 1e-10
+qid_pid_X_normalized = (qid_pid_X - mean) / std
+
+test_qids = qid_pid_features_df['qid'].values
+test_pids = qid_pid_features_df['pid'].values
+
+predicted_probs = model.predict_prob(qid_pid_X_normalized)
+
+results = []
+for qid, pid, prob in zip(test_qids, test_pids, predicted_probs):
+    results.append((qid, pid, prob))
+
+test_results_df = pd.DataFrame(results, columns=['qid', 'pid', 'prob'])
+
+test_results_sorted_df = test_results_df.sort_values(['qid', 'prob'], ascending=[True, False]).groupby('qid').head(100)
+test_results_sorted_df.reset_index(drop=True)
+
+print(len(test_results_sorted_df))
+
+with open('LR.txt', 'w') as file:
+    last_qid = 0
+    for i, row in test_results_sorted_df.iterrows():
+        if row['qid'] != last_qid:
+            rank = 1
+        qid = row['qid']
+        last_qid = qid
+        pid = row['pid']
+        score = float(row['prob'])
+        file.write(f'{qid} A2 {pid} {rank} {score} LR\n')
+        rank += 1
 
 end_time = time.time()  
 print("程序运行时间5：" + str(end_time - start_time))
