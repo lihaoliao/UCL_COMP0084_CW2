@@ -357,7 +357,7 @@ def cal_NDCG(LR_rank, qid_and_pid_and_rel):
         for pid,rel in LR_rank[qid].items():
             counted_passage += 1
             reli = 0
-            if rel == 1.0 and qid_and_pid_and_rel[qid][pid] == 1:
+            if qid_and_pid_and_rel[qid][pid] == 1:
                 rel_count += 1
                 reli = 1 
             DCG += (2 ** reli - 1) / np.log2(counted_passage + 1)   
