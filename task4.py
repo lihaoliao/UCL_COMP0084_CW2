@@ -26,6 +26,7 @@ class TextDataset(Dataset):
         self.max_length = max_length
         self.qid_pid_rel_map, self.num_relevancy_ones = self.build_qid_pid_rel_map()
         self.sample_data = self.sample_data(proportions = 1)
+        self.term_count = 0
 
     def build_qid_pid_rel_map(self):
         qid_pid_rel_map = {}
@@ -74,17 +75,19 @@ class TextDataset(Dataset):
 
     def __getitem__(self, index):
         row = self.dataframe.iloc[index]
-        query_vec = self.text_to_embedding(row['queries'])
-        passage_vec = self.text_to_embedding(row['passage'])
-        combine_vec  = self.text_to_embedding(row['queries'] + row['passage'])
+        query_vec = self.text_to_embedding(row['queries'], count=False)
+        passage_vec = self.text_to_embedding(row['passage'], count=False)
+        combine_vec  = self.text_to_embedding(row['queries'] + row['passage'], count=True)
         # label
         relevancy = row['relevancy']
         qid = row['qid']  
         pid = row['pid'] 
         return torch.tensor(query_vec).unsqueeze(dim=0), torch.tensor(passage_vec).unsqueeze(dim=0), torch.tensor(combine_vec).unsqueeze(dim=0), torch.tensor(relevancy, dtype=torch.float), qid, pid
 
-    def text_to_embedding(self, text):
+    def text_to_embedding(self, text, count):
         tokens = self.tokenizer(text)
+        if count:
+            self.term_count += len(tokens)
         tokens = set(word for word in tokens if word not in stop_words)
         embeddings = []
         # 遍历tokens中的每个单词
@@ -118,12 +121,12 @@ device = (
 print(f"Using device: {device}")
 
 embedding_dim = 100
-iteration = 1
+iteration = 10
    
 # class_num = 2
 lr = 0.001     
 out_channel = 2
-max_length = 40
+max_length = 70
 glove = vocab.GloVe(name='6B', dim=embedding_dim)
 
 def read_data(file_path, num_rows=None):
@@ -132,10 +135,10 @@ def read_data(file_path, num_rows=None):
 
 train_data_path = 'train_data.tsv'
 validation_data_path = 'validation_data.tsv'
-# train_df = read_data('train_data.tsv')
-# validation_df = read_data('validation_data.tsv')
 train_df = read_data('train_data.tsv')
 validation_df = read_data('validation_data.tsv')
+# train_df = read_data('train_data.tsv', 10000)
+# validation_df = read_data('validation_data.tsv', 10000)
 class_num = train_df['relevancy'].nunique()    
 
 tokenizer = torchtext.data.utils.get_tokenizer('basic_english')
@@ -163,10 +166,10 @@ def dict_to_df(data_dict, original_df):
 train_dataset = TextDataset(train_df, glove, tokenizer,max_length)
 sample_train_dateset = dict_to_df(train_dataset.sample_data, train_dataset.dataframe)
 sample_train_dateset = TextDataset(sample_train_dateset, glove, tokenizer, max_length)
-train_loader = DataLoader(sample_train_dateset, batch_size=1, shuffle=True)
+train_loader = DataLoader(sample_train_dateset, batch_size=32, shuffle=True)
 
 validation_dataset = TextDataset(validation_df, glove, tokenizer,max_length)
-validation_loader = DataLoader(validation_dataset, batch_size=1)
+validation_loader = DataLoader(validation_dataset, batch_size=32)
 
 # end()
 
@@ -176,7 +179,7 @@ validation_loader = DataLoader(validation_dataset, batch_size=1)
 #         break
          
 class Block(nn.Module):
-    def __init__(self,kernel_size, embedding_dim, out_channel, max_length):
+    def __init__(self, kernel_size, embedding_dim, out_channel, max_length):
         super().__init__()
         # CNN, batch_size, in_channel, max_length, embedding_dim, 输出卷成一个条
         # 输出通道可以优化
@@ -262,14 +265,22 @@ model.eval()
 qid_pid_prob_map = defaultdict(dict)
 with torch.no_grad():
     for query, passage, combine, relevancy, qid, pid in validation_loader:
-        combine = combine.float()
-        combine = combine.to(device)
+        # combine = combine.float()
+        # combine = combine.to(device)
+        passage = passage.float()
+        passage = passage.to(device)
         relevancy = relevancy.to(device) 
-        prob_rel, prob = model.forward(combine)
+        prob_rel, prob = model.forward(passage)
         prob = torch.softmax(prob, dim=1)
-        rel_prob = prob[0][1].item()
-        # prob[0][0] is irrelevant, prob[0][1] is relevant
-        qid_pid_prob_map[qid.item()][pid.item()] = rel_prob
+        for i in range(prob.shape[0]):  # 遍历整个批次
+            rel_prob = prob[i][1].item()  # 获取每个样本的相关概率
+            qid_i = qid[i].item()  # 获取每个样本的qid
+            pid_i = pid[i].item()  # 获取每个样本的pid
+
+            # 确保字典的外层是qid，内层是pid
+            if qid_i not in qid_pid_prob_map:
+                qid_pid_prob_map[qid_i] = {}
+            qid_pid_prob_map[qid_i][pid_i] = rel_prob
   
 sorted_qid_pid_prob_map = {}
 for qid, pid_prob_map in qid_pid_prob_map.items():
@@ -328,10 +339,75 @@ CNN_NDCG = cal_NDCG(sorted_qid_pid_prob_map, validation_dataset.qid_pid_rel_map)
 #     CNN_AP[lr] = cal_AP(qid_to_pid_rel[lr], validation_rel_dict)
 #     CNN_NDCG[lr] = cal_NDCG(qid_to_pid_rel[lr], validation_rel_dict)
 
-    
+# print('avg term in validation', validation_dataset.term_count / len(validation_dataset))
 print('AP',CNN_AP)    
 print('NDCG',CNN_NDCG)
 
+# ===================================================== NN ================================================
+
+def read_data(file_path, column_names):
+    return pd.read_csv(file_path, sep='\t', names=column_names, header=None)
+
+test_column_names = ['qid', 'queries']
+candidate_column_names = ['qid', 'pid', 'queries', 'passage']
+
+test_df = read_data('test-queries.tsv', test_column_names)
+candidate_df = read_data('candidate_passages_top1000.tsv', candidate_column_names)
+
+test_df = pd.merge(test_df[['qid', 'queries']], candidate_df[['qid', 'pid', 'passage']], on='qid', how='left')
+test_df['relevancy'] = 0.0
+test_df = test_df.groupby('qid').head(100)
+
+test_dataset = TextDataset(test_df, glove, tokenizer,max_length)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=True)
+
+model.eval()  
+qid_pid_prob_map = defaultdict(dict)
+with torch.no_grad():
+    for query, passage, combine, relevancy, qid, pid in test_loader:
+        # combine = combine.float()
+        # combine = combine.to(device)
+        passage = passage.float()
+        passage = passage.to(device)
+        relevancy = relevancy.to(device) 
+        prob_rel, prob = model.forward(passage)
+        prob = torch.softmax(prob, dim=1)
+        for i in range(prob.shape[0]):  # 遍历整个批次
+            rel_prob = prob[i][1].item()  # 获取每个样本的相关概率
+            qid_i = qid[i].item()  # 获取每个样本的qid
+            pid_i = pid[i].item()  # 获取每个样本的pid
+
+            # 确保字典的外层是qid，内层是pid
+            if qid_i not in qid_pid_prob_map:
+                qid_pid_prob_map[qid_i] = {}
+            qid_pid_prob_map[qid_i][pid_i] = rel_prob
+  
+sorted_qid_pid_prob_map = {}
+for qid, pid_prob_map in qid_pid_prob_map.items():
+    # 按prob进行降序排序，并存储结果
+    sorted_pids = sorted(pid_prob_map.items(), key=lambda x: x[1], reverse=True)
+    sorted_qid_pid_prob_map[qid] = sorted_pids
+
+data = []
+for qid, pid_prob in sorted_qid_pid_prob_map.items():
+    for pid, prob in pid_prob:
+        data.append((int(qid), int(pid), prob))
+
+# 创建DataFrame
+df = pd.DataFrame(data, columns=['qid', 'pid', 'prob'])
+print(len(df))    
+with open('NN.txt', 'w') as file:
+    last_qid = 0
+    for i, row in df.iterrows():
+        if row['qid'] != last_qid:
+            rank = 1
+        qid = int(row['qid'])
+        last_qid = qid
+        pid = int(row['pid'])
+        score = float(row['prob'])
+        file.write(f'{qid} A2 {pid} {rank} {score} NN\n')
+        rank += 1    
+    
 end()    
    
         
