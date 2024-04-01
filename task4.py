@@ -44,17 +44,18 @@ class TextDataset(Dataset):
         return qid_pid_rel_map, num_relevancy_ones
     
     def sample_data(self, proportions):
-        # 抽取每个qid中rel为1的数据和随机一条rel为0的数据，并形成{qid: {pid: rel}}结构
         sample_data = {}
         for qid, pid_rel_map in self.qid_pid_rel_map.items():
             rel_ones = {pid: rel for pid, rel in pid_rel_map.items() if rel == 1.0}
             rel_zeros = {pid: rel for pid, rel in pid_rel_map.items() if rel == 0.0}
         
             if rel_ones:
-                sample_data[qid] = {**rel_ones}  # 将rel为1的数据加入样本
+                sample_data[qid] = {**rel_ones} 
 
             if rel_zeros:
-                zero_sample = random.sample(list(rel_zeros.items()), 1)  # 随机选择一条rel为0的数据
+                zero_sample = random.sample(list(rel_zeros.items()), min(5, len(rel_zeros)))
+
+                # Merge the sampled items into the sample_data dictionary under the specified key qid
                 sample_data[qid] = {**sample_data.get(qid, {}), **dict(zero_sample)}
 
         # 额外选择rel为0的数据以满足所需比例
@@ -122,9 +123,8 @@ print(f"Using device: {device}")
 
 embedding_dim = 100
 iteration = 10
-   
 # class_num = 2
-lr = 0.001     
+lr = 0.01     
 out_channel = 2
 max_length = 70
 glove = vocab.GloVe(name='6B', dim=embedding_dim)
@@ -157,19 +157,19 @@ def dict_to_df(data_dict, original_df):
     # 如果你还需要query和passage列，你可能需要根据qid和pid从原始数据中获取这些信息
     # 假设original_df是你的原始DataFrame，包含所有的数据
     # 你可以如下合并它们以获取完整的信息
-    complete_df = pd.merge(filtered_df, original_df, on=['qid', 'pid', 'relevancy'], how='left')
-    complete_df = complete_df[['qid', 'pid', 'queries', 'passage', 'relevancy']]
+    df = pd.merge(filtered_df, original_df, on=['qid', 'pid', 'relevancy'], how='left')
+    df = df[['qid', 'pid', 'queries', 'passage', 'relevancy']]
     # print(len(complete_df))
-    return complete_df
+    return df
 
 # dataset and dataloader
 train_dataset = TextDataset(train_df, glove, tokenizer,max_length)
 sample_train_dateset = dict_to_df(train_dataset.sample_data, train_dataset.dataframe)
 sample_train_dateset = TextDataset(sample_train_dateset, glove, tokenizer, max_length)
-train_loader = DataLoader(sample_train_dateset, batch_size=32, shuffle=True)
+train_loader = DataLoader(sample_train_dateset, batch_size=16, shuffle=True)
 
 validation_dataset = TextDataset(validation_df, glove, tokenizer,max_length)
-validation_loader = DataLoader(validation_dataset, batch_size=32)
+validation_loader = DataLoader(validation_dataset, batch_size=16)
 
 # end()
 
