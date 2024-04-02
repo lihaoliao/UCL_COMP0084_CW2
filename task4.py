@@ -332,6 +332,7 @@ def cal_NDCG(CNN_rank, qid_and_pid_and_rel):
 
     return total_NDCG_for_each_query / len(qid_and_pid_and_rel)
 
+
 # LR_AP = {lr:AP}
 CNN_AP = cal_AP(sorted_qid_pid_prob_map, validation_dataset.qid_pid_rel_map)
 CNN_NDCG = cal_NDCG(sorted_qid_pid_prob_map, validation_dataset.qid_pid_rel_map)
@@ -391,11 +392,14 @@ for qid, pid_prob_map in qid_pid_prob_map.items():
 data = []
 for qid, pid_prob in sorted_qid_pid_prob_map.items():
     for pid, prob in pid_prob:
-        data.append((int(qid), int(pid), prob))
+        data.append((str(qid), str(pid), prob))
 
 # 创建DataFrame
 df = pd.DataFrame(data, columns=['qid', 'pid', 'prob'])
-print(len(df))    
+# print(len(df))
+df = df.sort_values('qid')  
+df = df.reset_index(drop=True)  
+
 with open('NN.txt', 'w') as file:
     last_qid = 0
     for i, row in df.iterrows():

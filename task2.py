@@ -458,7 +458,9 @@ test_results_df = pd.DataFrame(results, columns=['qid', 'pid', 'prob'])
 test_results_sorted_df = test_results_df.sort_values(['qid', 'prob'], ascending=[True, False]).groupby('qid').head(100)
 test_results_sorted_df.reset_index(drop=True)
 
-print(len(test_results_sorted_df))
+# print(len(test_results_sorted_df))
+test_results_sorted_df = test_results_sorted_df.sort_values('qid')
+test_results_sorted_df.reset_index(drop=True)
 
 with open('LR.txt', 'w') as file:
     last_qid = 0
