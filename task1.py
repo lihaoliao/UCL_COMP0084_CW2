@@ -1,11 +1,7 @@
 from collections import Counter, defaultdict
-import json
 import re
 import csv
 import numpy as np
-import time
-
-start_time = time.time() 
 
 preprocessing_re = re.compile(r'[^a-zA-Z\s]')
 stop_words = set(['did', 'a', "mightn't", 'these', 'to', 'just', 'his', 'into', 'but', 't', 'mustn', 'other', "won't", 'nor', 'himself', 'mightn', 'by', 've', 'very', 'so', "doesn't", 'which', 'off', 'an', 'with', 'at', 'below', 'your', 'shouldn', 'it', 'are', "needn't", 'hasn', 'that', 'me', 'more', 'no', 'do', 'herself', 'this', 'there', 'under', 'o', 'both', 'some', 'hers', 'over', 'between', 'them', 'been', 'because', 'myself', "don't", 'd', "didn't", 'only', 'on', 'how', 'am', 'who', 'their', "hasn't", 's', 'ours', 'you', "you'd", 'above', 'few', 'was', 'our', 'can', "hadn't", 'shan', 'now', 'once', 'being', 'hadn', 'were', 'whom', "isn't", 'ain', 'will', 'for', 'yours', "that'll", 'should', 'haven', 'those', 'couldn', 'while', 'same', 'themselves', 'itself', 'having', 'where', 'when', 'they', 'had', 'he', 'any', 'the', "should've", 'after', 'or', 'wasn', 'won', 'has', 'does', 'not', "shouldn't", 'than', 're', 'own', "mustn't", "it's", 'have', 'why', 'is', 'and', 'about', 'him', 'doing', 'theirs', 'wouldn', 'll', 'my', 'in', 'of', 'aren', 'needn', 'from', 'up', 'then', "she's", 'ma', "haven't", "you'll", "wasn't", 'y', 'against', 'here', 'further', "you're", 'yourself', 'down', 'before', 'such', 'until', 'isn', 'each', 'its', 'if', 'all', "you've", 'her', 'didn', 'doesn', 'what', "weren't", 'weren', "wouldn't", 'she', 'too', "aren't", 'most', "couldn't", 'i', 'during', 'ourselves', 'through', 'we', 'm', 'as', "shan't", 'out', 'yourselves', 'be', 'don', 'again'])
@@ -17,8 +13,6 @@ def preprocessing(text):
     tokens = text.split()
     filtered_tokens = [word for word in tokens if word not in stop_words]
     remove_text = Counter(filtered_tokens)
-    # with open('remove_stop_word_vocabulary.txt', 'w', encoding='utf-8') as file:
-    #     file.write('\n'.join(remove_text.keys()))
     return remove_text
 
 def read_and_process_tsv(file_path):
@@ -82,21 +76,13 @@ inverted_index = defaultdict(dict)
 for pid, terms in passages_id_and_terms_info.items():
     term_frequency = Counter(terms)
     for term, frequency in term_frequency.items():
-        inverted_index[term][pid] = frequency
-
-# with open('inverted_index.json', 'w', encoding='utf-8') as file:
-#     json.dump(inverted_index, file, ensure_ascii=False, indent=3)
-
-# with open('passages_id_and_terms_info.json', 'w', encoding='utf-8') as file:
-#     json.dump(passages_id_and_terms_info, file, ensure_ascii=False, indent=3)      
+        inverted_index[term][pid] = frequency 
 
 # create the inverted_index_query
 inverted_index_query = defaultdict(dict)   
-# each_query_terms_sum = {}     
 
 for qid, terms in queries_id_and_terms_info.items():
     term_frequency = Counter(terms)
-    # each_query_terms_sum[qid] = sum(term_frequency.values())
     for term, frequency in term_frequency.items():
         inverted_index_query[term][qid] = frequency  
         
@@ -181,7 +167,5 @@ def cal_NDCG(sorted_BM25_by_score, qid_and_pid_and_rel):
     return total_NDCG_for_each_query / len(qid_and_pid_and_rel)
 
 BM25_NDCG = cal_NDCG(sorted_BM25_by_score, qid_and_pid_and_rel)
-end_time = time.time()  
 print("BM25_AP: ", BM25_AP)
 print("BM25_NDCG: ", BM25_NDCG)
-print("程序运行时间：" + str(end_time - start_time))

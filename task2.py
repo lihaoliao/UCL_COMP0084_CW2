@@ -2,8 +2,7 @@ import numpy as np
 import pandas as pd
 import re
 import csv
-from collections import Counter, defaultdict
-import time
+from collections import defaultdict
 import random
 from gensim.models import Word2Vec
 import matplotlib.pyplot as plt
@@ -76,9 +75,7 @@ class LogisticRegression:
 
     def predict(self, X, threshold=0.5):
         probabilities = self.predict_prob(X)
-        return np.where(probabilities >= threshold, 1, 0)
-
-start_time = time.time()     
+        return np.where(probabilities >= threshold, 1, 0) 
 
 preprocessing_re = re.compile(r'[^a-zA-Z\s]')
 stop_words = set(['did', 'a', "mightn't", 'these', 'to', 'just', 'his', 'into', 'but', 't', 'mustn', 'other', "won't", 'nor', 'himself', 'mightn', 'by', 've', 'very', 'so', "doesn't", 'which', 'off', 'an', 'with', 'at', 'below', 'your', 'shouldn', 'it', 'are', "needn't", 'hasn', 'that', 'me', 'more', 'no', 'do', 'herself', 'this', 'there', 'under', 'o', 'both', 'some', 'hers', 'over', 'between', 'them', 'been', 'because', 'myself', "don't", 'd', "didn't", 'only', 'on', 'how', 'am', 'who', 'their', "hasn't", 's', 'ours', 'you', "you'd", 'above', 'few', 'was', 'our', 'can', "hadn't", 'shan', 'now', 'once', 'being', 'hadn', 'were', 'whom', "isn't", 'ain', 'will', 'for', 'yours', "that'll", 'should', 'haven', 'those', 'couldn', 'while', 'same', 'themselves', 'itself', 'having', 'where', 'when', 'they', 'had', 'he', 'any', 'the', "should've", 'after', 'or', 'wasn', 'won', 'has', 'does', 'not', "shouldn't", 'than', 're', 'own', "mustn't", "it's", 'have', 'why', 'is', 'and', 'about', 'him', 'doing', 'theirs', 'wouldn', 'll', 'my', 'in', 'of', 'aren', 'needn', 'from', 'up', 'then', "she's", 'ma', "haven't", "you'll", "wasn't", 'y', 'against', 'here', 'further', "you're", 'yourself', 'down', 'before', 'such', 'until', 'isn', 'each', 'its', 'if', 'all', "you've", 'her', 'didn', 'doesn', 'what', "weren't", 'weren', "wouldn't", 'she', 'too', "aren't", 'most', "couldn't", 'i', 'during', 'ourselves', 'through', 'we', 'm', 'as', "shan't", 'out', 'yourselves', 'be', 'don', 'again'])
@@ -126,8 +123,6 @@ def count_pid_per_query(data):
 rel_query_pid_count = count_pid_per_query(train_rel_qid_query_pid_passage) 
 # 4359542
 non_rel_query_pid_count = count_pid_per_query(train_non_rel_qid_query_pid_passage)
-# print("Number of relevant query-passage pairs:", rel_query_pid_count)
-# print("Number of non-relevant query-passage pairs:", non_rel_query_pid_count)
 
 #  use Random Negative Sampling for generating a subset of training data
 def sampling_non_rel_passage(data, sample_size):
@@ -138,9 +133,8 @@ def sampling_non_rel_passage(data, sample_size):
             sampled_pids = random.sample(list(pid_passage.keys()), min(sample_size, len(pid_passage)))
             new_data[qid][query] = {pid: pid_passage[pid] for pid in sampled_pids}
     return new_data
-# 比例
+
 sampled_train_non_rel_qid_query_pid_passage = sampling_non_rel_passage(train_non_rel_qid_query_pid_passage, 5)
-# print(len(sampled_train_non_rel_qid_query_pid_passage))
 
 # word embedding model training
 def create_query_passage_list(sampled_train_non_rel_qid_query_pid_passage, sampled_train_rel_qid_query_pid_passage):
@@ -177,35 +171,24 @@ def build_qid_pid_rel_dict(data, rel):
                 qid_pid_rel[qid][pid] = rel 
     return qid_pid_rel
 
-# 使用函数构建字典
 sampled_train_non_rel_qid_pid_rel = build_qid_pid_rel_dict(sampled_train_non_rel_qid_query_pid_passage, 0)
 train_rel_qid_pid_rel = build_qid_pid_rel_dict(train_rel_qid_query_pid_passage,1)
 
 def merge_dicts(dict1, dict2):
-    merged_dict = {**dict1}  # 复制第一个字典
+    merged_dict = {**dict1}  
     for qid, pid_rel in dict2.items():
         if qid in merged_dict:
-            # 如果 qid 已存在，则合并 pid 和 rel 值
             merged_dict[qid].update(pid_rel)
         else:
-            # 如果 qid 不存在，直接添加到结果字典中
             merged_dict[qid] = pid_rel
     return merged_dict
 
-# 使用函数合并字典
 merged_qid_pid_rel = merge_dicts(sampled_train_non_rel_qid_pid_rel, train_rel_qid_pid_rel)
 
 del sampled_train_non_rel_qid_query_pid_passage, train_rel_qid_query_pid_passage, validation_non_rel_qid_query_pid_passage, validation_rel_qid_query_pid_passage
 
-# print("Number of unique queries in training data:", len(train_query_list))
-# print("Number of unique queries in validation data:", len(validation_query_list))
-# print("Number of unique passages in training data:", len(train_passage_list))
-# print("Number of unique passages in validation data:", len(validation_passage_list))
-
 training_corpus = train_query_list + train_passage_list
-# print(len(training_corpus))
-# print(train_query_list[:1])
-# print(train_passage_list[:1])
+
 # iter 10 times
 train_model = Word2Vec(sentences=training_corpus, vector_size=100, window=5, min_count=1, sg=1, workers=4, epochs=10)
 
@@ -243,7 +226,6 @@ def calculate_features_and_labels(qid_embeddings, pid_embeddings, qid_to_terms, 
 
     return df
 
-# 使用更新的函数获取DataFrame、特征矩阵和标签数组
 train_data_df = calculate_features_and_labels(train_qid_embeddings, train_pid_embeddings, train_qid_to_terms, train_pid_to_terms, merged_qid_pid_rel)
 validation_data_df = calculate_features_and_labels(validation_qid_embeddings, validation_pid_embeddings, validation_qid_to_terms, validation_pid_to_terms, validation_rel_dict)
 
@@ -269,10 +251,6 @@ mean_v = np.mean(validation_X, axis=0)
 std_v = np.std(validation_X, axis=0)
 std += 1e-10
 validation_X_normalized = (validation_X - mean_v) / std_v
-# print("train_X_normalized: ", train_X_normalized[:1])
-# print("validation_X_normalized: ", validation_X_normalized[:1])
-# print("train_X", train_X[:1])
-# print("validation_X", validation_X[:1])
 
 validation_qids = validation_data_df['qid'].values
 validation_pids = validation_data_df['pid'].values
@@ -284,7 +262,6 @@ for lr in learning_rates:
     model.fit(train_X_normalized, train_y, None, learning_rate=lr)
     # loss histories for each learning rate
     loss_histories[lr] = model.loss_history
-    # print(model.w, model.b)
     stop_iteration_times[lr] = model.iterations
 
     # predict probabilities for the validation set in each learning rate train model
@@ -299,7 +276,6 @@ for lr in learning_rates:
 sorted_results_dfs_prob = {}  
 
 for lr, df in results_dfs.items():
-    # sort by qid and then by probability in descending order
     sorted_df = df.sort_values(by=['qid', 'prob'], ascending=[True, False])
     sorted_results_dfs_prob[lr] = sorted_df.reset_index(drop=True)
   
@@ -308,14 +284,7 @@ sorted_results_dfs_binrel = copy.deepcopy(sorted_results_dfs_prob)
 for lr, df in sorted_results_dfs_binrel.items():
     df['prob'] = np.where(df['prob'] >= 0.5, 1.0, 0.0)  
 
-# for lr, df in sorted_results_dfs_binrel.items():    
-#     print(lr , ":sorted_results_dfs_pro: \n", sorted_results_dfs_prob[lr][:1])
-    # print("sorted_results_dfs_rel: \n", sorted_results_dfs_binrel[lr][:1]) 
-# print("sorted_results_def_len len: ", len(sorted_results_dfs_prob[0.1]))
-
 lr_groups = [learning_rates[:3], learning_rates[3:6]]
-# lr_groups = [learning_rates[3:4], learning_rates[5:6]]
-# lr_groups = [learning_rates[:6]]
 
 for i, lrs in enumerate(lr_groups):
     plt.figure(figsize=(10, 6))
@@ -473,6 +442,3 @@ with open('LR.txt', 'w') as file:
         score = float(row['prob'])
         file.write(f'{qid} A2 {pid} {rank} {score} LR\n')
         rank += 1
-
-end_time = time.time()  
-print("程序运行时间5：" + str(end_time - start_time))

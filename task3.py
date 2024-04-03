@@ -2,18 +2,12 @@ import itertools
 import random
 import pandas as pd
 import numpy as np
-import time
 import re
 from collections import OrderedDict, defaultdict
 import csv
 import xgboost as xgb
 from gensim.models import Word2Vec
 
-start_time = time.time() 
-def end():
-    end_time = time.time()  
-    print("程序运行时间5：" + str(end_time - start_time))
-    
 stop_words = set(['did', 'a', "mightn't", 'these', 'to', 'just', 'his', 'into', 'but', 't', 'mustn', 'other', "won't", 'nor', 'himself', 'mightn', 'by', 've', 'very', 'so', "doesn't", 'which', 'off', 'an', 'with', 'at', 'below', 'your', 'shouldn', 'it', 'are', "needn't", 'hasn', 'that', 'me', 'more', 'no', 'do', 'herself', 'this', 'there', 'under', 'o', 'both', 'some', 'hers', 'over', 'between', 'them', 'been', 'because', 'myself', "don't", 'd', "didn't", 'only', 'on', 'how', 'am', 'who', 'their', "hasn't", 's', 'ours', 'you', "you'd", 'above', 'few', 'was', 'our', 'can', "hadn't", 'shan', 'now', 'once', 'being', 'hadn', 'were', 'whom', "isn't", 'ain', 'will', 'for', 'yours', "that'll", 'should', 'haven', 'those', 'couldn', 'while', 'same', 'themselves', 'itself', 'having', 'where', 'when', 'they', 'had', 'he', 'any', 'the', "should've", 'after', 'or', 'wasn', 'won', 'has', 'does', 'not', "shouldn't", 'than', 're', 'own', "mustn't", "it's", 'have', 'why', 'is', 'and', 'about', 'him', 'doing', 'theirs', 'wouldn', 'll', 'my', 'in', 'of', 'aren', 'needn', 'from', 'up', 'then', "she's", 'ma', "haven't", "you'll", "wasn't", 'y', 'against', 'here', 'further', "you're", 'yourself', 'down', 'before', 'such', 'until', 'isn', 'each', 'its', 'if', 'all', "you've", 'her', 'didn', 'doesn', 'what', "weren't", 'weren', "wouldn't", 'she', 'too', "aren't", 'most', "couldn't", 'i', 'during', 'ourselves', 'through', 'we', 'm', 'as', "shan't", 'out', 'yourselves', 'be', 'don', 'again'])
 preprocessing_re = re.compile(r'[^a-zA-Z\s]')
 
@@ -61,8 +55,6 @@ def count_pid_per_query(data):
 rel_query_pid_count = count_pid_per_query(train_rel_qid_query_pid_passage) 
 # 4359542
 non_rel_query_pid_count = count_pid_per_query(train_non_rel_qid_query_pid_passage)
-# print("Number of relevant query-passage pairs:", rel_query_pid_count)
-# print("Number of non-relevant query-passage pairs:", non_rel_query_pid_count)
 
 #  use Random Negative Sampling for generating a subset of training data
 def sampling_non_rel_passage(data, sample_size):
@@ -73,7 +65,7 @@ def sampling_non_rel_passage(data, sample_size):
             sampled_pids = random.sample(list(pid_passage.keys()), min(sample_size, len(pid_passage)))
             new_data[qid][query] = {pid: pid_passage[pid] for pid in sampled_pids}
     return new_data
-# 比例
+
 sampled_train_non_rel_qid_query_pid_passage = sampling_non_rel_passage(train_non_rel_qid_query_pid_passage, 5)
 
 # word embedding model training
@@ -111,22 +103,18 @@ def build_qid_pid_rel_dict(data, rel):
                 qid_pid_rel[qid][pid] = rel 
     return qid_pid_rel
 
-# 使用函数构建字典
 sampled_train_non_rel_qid_pid_rel = build_qid_pid_rel_dict(sampled_train_non_rel_qid_query_pid_passage, 0)
 train_rel_qid_pid_rel = build_qid_pid_rel_dict(train_rel_qid_query_pid_passage,1)
 
 def merge_dicts(dict1, dict2):
-    merged_dict = {**dict1}  # 复制第一个字典
+    merged_dict = {**dict1}
     for qid, pid_rel in dict2.items():
         if qid in merged_dict:
-            # 如果 qid 已存在，则合并 pid 和 rel 值
             merged_dict[qid].update(pid_rel)
         else:
-            # 如果 qid 不存在，直接添加到结果字典中
             merged_dict[qid] = pid_rel
     return merged_dict
 
-# 使用函数合并字典
 merged_qid_pid_rel = merge_dicts(sampled_train_non_rel_qid_pid_rel, train_rel_qid_pid_rel)
 del sampled_train_non_rel_qid_query_pid_passage, train_rel_qid_query_pid_passage, validation_non_rel_qid_query_pid_passage, validation_rel_qid_query_pid_passage
 
@@ -273,6 +261,7 @@ best_gamma = 0
 best_min_child_weight = 0
 best_max_depth = 0
 
+# adjusting here for the number of iterations and other hyperparameters
 for i in range(10):
     print("iteration: ", i)
     eta_range = [0.001, 0.01, 0.1, 0.5, 1]
@@ -344,7 +333,6 @@ for i in range(10):
     AP_list = []
     NDCG_list = []
     
-    print("round 1")
     # round 1
     xgb_model = xgb.train(params, tt_dmatrix, num_boost_round=4,
                         evals=[(one_dmatrix, 'validation')], early_stopping_rounds=2)
@@ -367,7 +355,6 @@ for i in range(10):
     AP_list.append(LM_AP)
     NDCG_list.append(LM_NDCG)
     
-    print("round 2")
     # round 2
     xgb_model = xgb.train(params, oth_dmatrix, num_boost_round=4,
                         evals=[(two_dmatrix, 'validation')], early_stopping_rounds=2)
@@ -389,7 +376,6 @@ for i in range(10):
     AP_list.append(LM_AP)
     NDCG_list.append(LM_NDCG)
     
-    print("round 3")
     # round 3
     xgb_model = xgb.train(params, oth_dmatrix, num_boost_round=4,
                         evals=[(three_dmatrix, 'validation')], early_stopping_rounds=2)
@@ -428,8 +414,6 @@ for i in range(10):
         best_gamma = gamma
         best_min_child_weight = min_child_weight
         best_max_depth = max_depth    
-    end()
-        
 
 # LR_AP = {lr:AP}
 LM_AP = best_AP
@@ -534,4 +518,3 @@ with open('LM.txt', 'w') as file:
         for pid, prob in pids.items():
             file.write(f'{qid} A2 {pid} {rank} {prob} LM\n')
             rank += 1    
-end()

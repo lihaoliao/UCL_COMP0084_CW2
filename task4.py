@@ -5,16 +5,9 @@ import torch
 import torchtext
 import time
 import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from collections import defaultdict
 import torchtext.vocab as vocab
-
-start_time = time.time() 
-def end():
-    end_time = time.time()  
-    print("程序运行时间5：" + str(end_time - start_time))
     
 stop_words = set(['did', 'a', "mightn't", 'these', 'to', 'just', 'his', 'into', 'but', 't', 'mustn', 'other', "won't", 'nor', 'himself', 'mightn', 'by', 've', 'very', 'so', "doesn't", 'which', 'off', 'an', 'with', 'at', 'below', 'your', 'shouldn', 'it', 'are', "needn't", 'hasn', 'that', 'me', 'more', 'no', 'do', 'herself', 'this', 'there', 'under', 'o', 'both', 'some', 'hers', 'over', 'between', 'them', 'been', 'because', 'myself', "don't", 'd', "didn't", 'only', 'on', 'how', 'am', 'who', 'their', "hasn't", 's', 'ours', 'you', "you'd", 'above', 'few', 'was', 'our', 'can', "hadn't", 'shan', 'now', 'once', 'being', 'hadn', 'were', 'whom', "isn't", 'ain', 'will', 'for', 'yours', "that'll", 'should', 'haven', 'those', 'couldn', 'while', 'same', 'themselves', 'itself', 'having', 'where', 'when', 'they', 'had', 'he', 'any', 'the', "should've", 'after', 'or', 'wasn', 'won', 'has', 'does', 'not', "shouldn't", 'than', 're', 'own', "mustn't", "it's", 'have', 'why', 'is', 'and', 'about', 'him', 'doing', 'theirs', 'wouldn', 'll', 'my', 'in', 'of', 'aren', 'needn', 'from', 'up', 'then', "she's", 'ma', "haven't", "you'll", "wasn't", 'y', 'against', 'here', 'further', "you're", 'yourself', 'down', 'before', 'such', 'until', 'isn', 'each', 'its', 'if', 'all', "you've", 'her', 'didn', 'doesn', 'what', "weren't", 'weren', "wouldn't", 'she', 'too', "aren't", 'most', "couldn't", 'i', 'during', 'ourselves', 'through', 'we', 'm', 'as', "shan't", 'out', 'yourselves', 'be', 'don', 'again'])
 
@@ -57,8 +50,7 @@ class TextDataset(Dataset):
 
                 # Merge the sampled items into the sample_data dictionary under the specified key qid
                 sample_data[qid] = {**sample_data.get(qid, {}), **dict(zero_sample)}
-
-        # 额外选择rel为0的数据以满足所需比例
+                
         total_data_needed = int(self.num_relevancy_ones * (proportions + 1)) - sum(len(data_value) for data_value in sample_data.values())
         if total_data_needed > 0:
             all_zeros = [(qid, pid, rel) for qid, pid_rel_map in self.qid_pid_rel_map.items() for pid, rel in pid_rel_map.items() if rel == 0.0]
@@ -68,7 +60,7 @@ class TextDataset(Dataset):
                     sample_data[qid][pid] = rel
                 else:
                     sample_data[qid] = {pid: rel}
-        # print('sample data', len(sample_data))
+
         return sample_data
 
     def __len__(self):
@@ -91,20 +83,14 @@ class TextDataset(Dataset):
             self.term_count += len(tokens)
         tokens = set(word for word in tokens if word not in stop_words)
         embeddings = []
-        # 遍历tokens中的每个单词
         for t in tokens:
-        # 检查单词是否在GloVe词汇表中
             if t in self.glove_vectors.stoi:
-            # 获取GloVe向量并转换为NumPy数组
                 vector = self.glove_vectors[t].numpy()
-                # 将向量添加到列表中
                 embeddings.append(vector)
                 
-        # 如果生成的词向量列表超出了最大长度，进行截断
         if len(embeddings) > self.max_length:
             embeddings = embeddings[:self.max_length]
         if len(embeddings) < self.max_length:
-        # 添加(padding)向量直到达到max_length
             embeddings += [np.zeros(self.glove_vectors.dim) for _ in range(self.max_length - len(embeddings))]    
         if len(embeddings) == 0:
             return np.zeros((self.max_length, self.glove_vectors.dim))
@@ -123,7 +109,6 @@ print(f"Using device: {device}")
 
 embedding_dim = 100
 iteration = 10
-# class_num = 2
 lr = 0.01     
 out_channel = 2
 max_length = 70
@@ -137,8 +122,6 @@ train_data_path = 'train_data.tsv'
 validation_data_path = 'validation_data.tsv'
 train_df = read_data('train_data.tsv')
 validation_df = read_data('validation_data.tsv')
-# train_df = read_data('train_data.tsv', 10000)
-# validation_df = read_data('validation_data.tsv', 10000)
 class_num = train_df['relevancy'].nunique()    
 
 tokenizer = torchtext.data.utils.get_tokenizer('basic_english')
@@ -149,17 +132,9 @@ def dict_to_df(data_dict, original_df):
         for pid, rel in pid_rel_map.items():
             data_list.append((qid, pid, rel))
 
-    # 使用列表创建DataFrame
     filtered_df = pd.DataFrame(data_list, columns=['qid', 'pid', 'relevancy'])
-
-    # 显示DataFrame
-
-    # 如果你还需要query和passage列，你可能需要根据qid和pid从原始数据中获取这些信息
-    # 假设original_df是你的原始DataFrame，包含所有的数据
-    # 你可以如下合并它们以获取完整的信息
     df = pd.merge(filtered_df, original_df, on=['qid', 'pid', 'relevancy'], how='left')
     df = df[['qid', 'pid', 'queries', 'passage', 'relevancy']]
-    # print(len(complete_df))
     return df
 
 # dataset and dataloader
@@ -171,41 +146,25 @@ train_loader = DataLoader(sample_train_dateset, batch_size=16, shuffle=True)
 validation_dataset = TextDataset(validation_df, glove, tokenizer,max_length)
 validation_loader = DataLoader(validation_dataset, batch_size=16)
 
-# end()
-
-# for i in range(1):
-#     for query, passage, combine, relevancy in train_loader:
-#         print('query:', query.shape, 'passage:', passage.shape, 'combine:', combine.shape, 'relevancy:', relevancy.shape)
-#         break
-         
 class Block(nn.Module):
     def __init__(self, kernel_size, embedding_dim, out_channel, max_length):
         super().__init__()
-        # CNN, batch_size, in_channel, max_length, embedding_dim, 输出卷成一个条
-        # 输出通道可以优化
         self.cnn = nn.Conv2d(in_channels=1, out_channels=out_channel, kernel_size=(kernel_size, embedding_dim))
         # ACT
         self.act = nn.ReLU()
         # MaxPool
         self.maxpool = nn.MaxPool1d(kernel_size=(max_length - kernel_size + 1))
     def forward(self, combine_vec):
-        # print('combine_vec', combine_vec.shape)
         c = self.cnn.forward(combine_vec)
-        # print('c', c.shape)
         a = self.act.forward(c)
-        # print('a', a.shape)
         a = a.squeeze(dim=-1)
-        # print('a', a.shape)
         m = self.maxpool.forward(a)
-        # print('m', m.shape)
         m = m.squeeze(dim=-1)
-        # print('m', m.shape)
         return m  
       
 class TextCNN(nn.Module):
     def __init__(self, embedding_dim, class_num,out_channel,max_length):
         super().__init__()
-        # 卷积核可以优化
         self.block1 = Block(2, embedding_dim,out_channel,max_length)
         self.block2 = Block(3, embedding_dim,out_channel,max_length)
         self.block3 = Block(4, embedding_dim,out_channel,max_length)
@@ -219,7 +178,6 @@ class TextCNN(nn.Module):
         b3_result = self.block3.forward(combine_vec)
         
         feature = torch.cat([b1_result, b2_result, b3_result], dim=1)
-        # print('feature', feature.shape)
         prob = self.classifier(feature)
         
         # 
@@ -232,11 +190,8 @@ class TextCNN(nn.Module):
            
 model = TextCNN(embedding_dim, class_num,out_channel,max_length).to(device)
 opt = torch.optim.Adam(model.parameters(), lr)
-       
-# initial_state = model.state_dict()
                   
 for i in range(iteration):      
-    # train mode but not work in this case
     model.train()
     for query, passage, combine, relevancy, qid, pid in train_loader:
         combine = combine.float()
@@ -246,45 +201,27 @@ for i in range(iteration):
         loss = model.forward(combine, relevancy)
         loss.backward()
         opt.step()
-        # print('loss', loss)
-    # 假设你想监控的是名为'block1.cnn'的第一个卷积层
-    # cnn_weights = model.block1.cnn.weight.data.cpu().numpy()
-    # cnn_biases = model.block1.cnn.bias.data.cpu().numpy()
-
-    # 计算权重和偏置的平均值
-    # avg_weight = cnn_weights.mean()
-    # avg_bias = cnn_biases.mean()
-
-    # print(f'Epoch {i+1}, Loss: {loss.item()}')
-    # print(f'Average CNN Weight: {avg_weight}')
-    # print(f'Average CNN Bias: {avg_bias}')   
-    
-# train_state = model.state_dict()
         
 model.eval()  
 qid_pid_prob_map = defaultdict(dict)
 with torch.no_grad():
     for query, passage, combine, relevancy, qid, pid in validation_loader:
-        # combine = combine.float()
-        # combine = combine.to(device)
         passage = passage.float()
         passage = passage.to(device)
         relevancy = relevancy.to(device) 
         prob_rel, prob = model.forward(passage)
         prob = torch.softmax(prob, dim=1)
-        for i in range(prob.shape[0]):  # 遍历整个批次
-            rel_prob = prob[i][1].item()  # 获取每个样本的相关概率
-            qid_i = qid[i].item()  # 获取每个样本的qid
-            pid_i = pid[i].item()  # 获取每个样本的pid
+        for i in range(prob.shape[0]):  
+            rel_prob = prob[i][1].item()
+            qid_i = qid[i].item() 
+            pid_i = pid[i].item() 
 
-            # 确保字典的外层是qid，内层是pid
             if qid_i not in qid_pid_prob_map:
                 qid_pid_prob_map[qid_i] = {}
             qid_pid_prob_map[qid_i][pid_i] = rel_prob
   
 sorted_qid_pid_prob_map = {}
 for qid, pid_prob_map in qid_pid_prob_map.items():
-    # 按prob进行降序排序，并存储结果
     sorted_pids = sorted(pid_prob_map.items(), key=lambda x: x[1], reverse=True)
     sorted_qid_pid_prob_map[qid] = sorted_pids
 
@@ -336,11 +273,6 @@ def cal_NDCG(CNN_rank, qid_and_pid_and_rel):
 # LR_AP = {lr:AP}
 CNN_AP = cal_AP(sorted_qid_pid_prob_map, validation_dataset.qid_pid_rel_map)
 CNN_NDCG = cal_NDCG(sorted_qid_pid_prob_map, validation_dataset.qid_pid_rel_map)
-# for lr in qid_to_pid_rel.keys():
-#     CNN_AP[lr] = cal_AP(qid_to_pid_rel[lr], validation_rel_dict)
-#     CNN_NDCG[lr] = cal_NDCG(qid_to_pid_rel[lr], validation_rel_dict)
-
-# print('avg term in validation', validation_dataset.term_count / len(validation_dataset))
 print('AP',CNN_AP)    
 print('NDCG',CNN_NDCG)
 
@@ -366,26 +298,22 @@ model.eval()
 qid_pid_prob_map = defaultdict(dict)
 with torch.no_grad():
     for query, passage, combine, relevancy, qid, pid in test_loader:
-        # combine = combine.float()
-        # combine = combine.to(device)
         passage = passage.float()
         passage = passage.to(device)
         relevancy = relevancy.to(device) 
         prob_rel, prob = model.forward(passage)
         prob = torch.softmax(prob, dim=1)
-        for i in range(prob.shape[0]):  # 遍历整个批次
-            rel_prob = prob[i][1].item()  # 获取每个样本的相关概率
-            qid_i = qid[i].item()  # 获取每个样本的qid
-            pid_i = pid[i].item()  # 获取每个样本的pid
+        for i in range(prob.shape[0]):  
+            rel_prob = prob[i][1].item() 
+            qid_i = qid[i].item()  
+            pid_i = pid[i].item()  
 
-            # 确保字典的外层是qid，内层是pid
             if qid_i not in qid_pid_prob_map:
                 qid_pid_prob_map[qid_i] = {}
             qid_pid_prob_map[qid_i][pid_i] = rel_prob
   
 sorted_qid_pid_prob_map = {}
 for qid, pid_prob_map in qid_pid_prob_map.items():
-    # 按prob进行降序排序，并存储结果
     sorted_pids = sorted(pid_prob_map.items(), key=lambda x: x[1], reverse=True)
     sorted_qid_pid_prob_map[qid] = sorted_pids
 
@@ -394,9 +322,7 @@ for qid, pid_prob in sorted_qid_pid_prob_map.items():
     for pid, prob in pid_prob:
         data.append((str(qid), str(pid), prob))
 
-# 创建DataFrame
 df = pd.DataFrame(data, columns=['qid', 'pid', 'prob'])
-# print(len(df))
 df = df.sort_values('qid')  
 df = df.reset_index(drop=True)  
 
@@ -411,8 +337,7 @@ with open('NN.txt', 'w') as file:
         score = float(row['prob'])
         file.write(f'{qid} A2 {pid} {rank} {score} NN\n')
         rank += 1    
-    
-end()    
+  
    
         
         
