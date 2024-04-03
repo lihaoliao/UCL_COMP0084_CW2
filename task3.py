@@ -61,8 +61,8 @@ def count_pid_per_query(data):
 rel_query_pid_count = count_pid_per_query(train_rel_qid_query_pid_passage) 
 # 4359542
 non_rel_query_pid_count = count_pid_per_query(train_non_rel_qid_query_pid_passage)
-print("Number of relevant query-passage pairs:", rel_query_pid_count)
-print("Number of non-relevant query-passage pairs:", non_rel_query_pid_count)
+# print("Number of relevant query-passage pairs:", rel_query_pid_count)
+# print("Number of non-relevant query-passage pairs:", non_rel_query_pid_count)
 
 #  use Random Negative Sampling for generating a subset of training data
 def sampling_non_rel_passage(data, sample_size):
@@ -171,6 +171,8 @@ def calculate_features_and_labels(qid_embeddings, pid_embeddings, qid_to_terms, 
 train_data_df = calculate_features_and_labels(train_qid_embeddings, train_pid_embeddings, train_qid_to_terms, train_pid_to_terms, merged_qid_pid_rel)
 validation_data_df = calculate_features_and_labels(validation_qid_embeddings, validation_pid_embeddings, validation_qid_to_terms, validation_pid_to_terms, validation_rel_dict)
 
+del train_qid_to_terms, train_pid_to_terms, validation_qid_to_terms, validation_pid_to_terms, train_qid_embeddings, train_pid_embeddings, validation_qid_embeddings, validation_pid_embeddings
+
 sorted_train_data_df = train_data_df.sort_values(by='qid').reset_index(drop=True)
 sorted_train_qid_counts = sorted_train_data_df.groupby('qid').size()
 
@@ -183,13 +185,15 @@ for qid, count in sorted_train_qid_counts.items():
     group_train.append(count)
 for qid, count in sorted_validation_qid_counts.items():
     group_valid.append(count)
-
+ 
 train_X = np.stack(sorted_train_data_df['features'].values)
 train_y = sorted_train_data_df['label'].values
 train_qid_list = sorted_train_data_df['qid'].values
+train_pid_list = sorted_train_data_df['pid'].values
 
 validation_X = np.stack(sorted_validation_data_df['features'].values)
 validation_y = sorted_validation_data_df['label'].values
+
 validation_qid_list = sorted_validation_data_df['qid'].values
 validation_pid_list = sorted_validation_data_df['pid'].values
 
@@ -206,26 +210,19 @@ validation_X_normalized = (validation_X - mean_v) / std_v
 train_dmatrix = xgb.DMatrix(train_X_normalized, label=train_y)
 valid_dmatrix = xgb.DMatrix(validation_X_normalized, label=validation_y)
 
+cv_X = np.concatenate([train_X_normalized, validation_X_normalized])
+cv_qid_list = np.concatenate([train_qid_list, validation_qid_list])
+cv_pid_list = np.concatenate([train_pid_list, validation_pid_list])
+cv_y = np.concatenate([train_y, validation_y])
+
 train_dmatrix.set_group(group_train)
 valid_dmatrix.set_group(group_valid)
 
-params = {'objective': "rank:pairwise", 'eta': 0.1, 'gamma': 1.0,
-          'min_child_weight': 0.1, 'max_depth': 6}
+train_validation_rel_dict = merge_dicts(merged_qid_pid_rel, validation_rel_dict)
 
-xgb_model = xgb.train(params, train_dmatrix, num_boost_round=4,
-                      evals=[(valid_dmatrix, 'validation')])
+LM_AP = 0
+LM_NDCG = 0
 
-pred = xgb_model.predict(valid_dmatrix)
-
-qid_pid_prob_map = defaultdict(dict)
-for i in range(len(validation_qid_list)):
-    qid_pid_prob_map[validation_qid_list[i]][validation_pid_list[i]] = pred[i]
-    
-sorted_qid_pid_prob_map = defaultdict(list) 
-for qid, pid_prob_map in qid_pid_prob_map.items():
-    sorted_pids = sorted(pid_prob_map.items(), key=lambda x: x[1], reverse=True)
-    sorted_qid_pid_prob_map[qid] = sorted_pids     
-    
 def cal_AP(LM_rank, qid_and_pid_and_rel):
     total_AP_for_each_query = 0
     for qid,pids in qid_and_pid_and_rel.items():
@@ -269,11 +266,180 @@ def cal_NDCG(LM_rank, qid_and_pid_and_rel):
 
     return total_NDCG_for_each_query / len(qid_and_pid_and_rel)
 
+best_AP = 0
+best_NDCG = 0
+best_eta = 0
+best_gamma = 0
+best_min_child_weight = 0
+best_max_depth = 0
+
+for i in range(10):
+    print("iteration: ", i)
+    eta_range = [0.001, 0.01, 0.1, 0.5, 1]
+    gamma_range = [0, 0.1, 0.5, 1.0]
+    min_child_weight_range = [1, 3, 5]
+    max_depth_range = [4, 6, 8, 10]
+
+    eta = random.choice(eta_range)
+    gamma = random.choice(gamma_range)
+    min_child_weight = random.choice(min_child_weight_range)   
+    max_depth = random.choice(max_depth_range)
+    
+    params = {
+        # 'objective': 'rank:ndcg',
+        # 'objective': 'rank:map',
+        'objective': 'rank:pairwise',
+        'eta': eta,
+        'gamma': gamma,
+        'min_child_weight': min_child_weight,
+        'max_depth': max_depth
+    }
+    
+    combined_Xy_qid_pid = np.column_stack((cv_X, cv_qid_list, cv_pid_list, cv_y))
+    np.random.shuffle(combined_Xy_qid_pid)
+    num_features = cv_X.shape[1]
+    
+    cv_time = 3  
+    split_data = np.array_split(combined_Xy_qid_pid, cv_time)
+    
+    train_X_part_one = split_data[0][:, :num_features]
+    train_qid_part_one = split_data[0][:, num_features]
+    train_pid_part_one = split_data[0][:, num_features + 1]
+    train_y_part_one = split_data[0][:, -1]
+    
+    train_X_part_two = split_data[1][:, :num_features]
+    train_qid_part_two = split_data[1][:, num_features]
+    train_pid_part_two = split_data[1][:, num_features + 1]
+    train_y_part_two = split_data[1][:, -1]
+    
+    train_X_part_three = split_data[2][:, :num_features]
+    train_qid_part_three = split_data[2][:, num_features]
+    train_pid_part_three = split_data[2][:, num_features + 1]
+    train_y_part_three = split_data[2][:, -1]
+    
+    one_two_X = np.concatenate([train_X_part_one, train_X_part_two])
+    two_three_X = np.concatenate([train_X_part_two, train_X_part_three])
+    one_three_X = np.concatenate([train_X_part_one, train_X_part_three])
+    
+    ot_qid = np.concatenate([train_qid_part_one, train_qid_part_two])
+    tt_qid = np.concatenate([train_qid_part_two, train_qid_part_three])
+    oth_qid = np.concatenate([train_qid_part_one, train_qid_part_three])
+    
+    ot_pid = np.concatenate([train_pid_part_one, train_pid_part_two])
+    tt_pid = np.concatenate([train_pid_part_two, train_pid_part_three])
+    oth_pid = np.concatenate([train_pid_part_one, train_pid_part_three])
+    
+    ot_y = np.concatenate([train_y_part_one, train_y_part_two])
+    tt_y = np.concatenate([train_y_part_two, train_y_part_three])
+    oth_y = np.concatenate([train_y_part_one, train_y_part_three])
+    
+    one_dmatrix = xgb.DMatrix(train_X_part_one, label=train_y_part_one)
+    two_dmatrix = xgb.DMatrix(train_X_part_two, label=train_y_part_two)
+    three_dmatrix = xgb.DMatrix(train_X_part_three, label=train_y_part_three)
+    
+    ot_dmatrix = xgb.DMatrix(one_two_X, label=ot_y)
+    tt_dmatrix = xgb.DMatrix(two_three_X, label=tt_y)
+    oth_dmatrix = xgb.DMatrix(one_three_X, label=oth_y)
+
+    AP_list = []
+    NDCG_list = []
+    
+    print("round 1")
+    # round 1
+    xgb_model = xgb.train(params, tt_dmatrix, num_boost_round=4,
+                        evals=[(one_dmatrix, 'validation')], early_stopping_rounds=2)
+
+    
+    pred = xgb_model.predict(one_dmatrix)
+
+    qid_pid_prob_map = defaultdict(dict)
+    for i in range(len(train_qid_part_one)):
+        qid_pid_prob_map[train_qid_part_one[i]][train_pid_part_one[i]] = pred[i]
+        
+    sorted_qid_pid_prob_map = defaultdict(list) 
+    for qid, pid_prob_map in qid_pid_prob_map.items():
+        sorted_pids = sorted(pid_prob_map.items(), key=lambda x: x[1], reverse=True)
+        sorted_qid_pid_prob_map[qid] = sorted_pids    
+    
+    
+    LM_AP = cal_AP(sorted_qid_pid_prob_map, train_validation_rel_dict)
+    LM_NDCG = cal_NDCG(sorted_qid_pid_prob_map, train_validation_rel_dict)
+    AP_list.append(LM_AP)
+    NDCG_list.append(LM_NDCG)
+    
+    print("round 2")
+    # round 2
+    xgb_model = xgb.train(params, oth_dmatrix, num_boost_round=4,
+                        evals=[(two_dmatrix, 'validation')], early_stopping_rounds=2)
+
+    
+    pred = xgb_model.predict(two_dmatrix)
+
+    qid_pid_prob_map = defaultdict(dict)
+    for i in range(len(train_qid_part_two)):
+        qid_pid_prob_map[train_qid_part_two[i]][train_pid_part_two[i]] = pred[i]
+        
+    sorted_qid_pid_prob_map = defaultdict(list) 
+    for qid, pid_prob_map in qid_pid_prob_map.items():
+        sorted_pids = sorted(pid_prob_map.items(), key=lambda x: x[1], reverse=True)
+        sorted_qid_pid_prob_map[qid] = sorted_pids    
+    
+    LM_AP = cal_AP(sorted_qid_pid_prob_map, train_validation_rel_dict)
+    LM_NDCG = cal_NDCG(sorted_qid_pid_prob_map, train_validation_rel_dict)
+    AP_list.append(LM_AP)
+    NDCG_list.append(LM_NDCG)
+    
+    print("round 3")
+    # round 3
+    xgb_model = xgb.train(params, oth_dmatrix, num_boost_round=4,
+                        evals=[(three_dmatrix, 'validation')], early_stopping_rounds=2)
+
+    
+    pred = xgb_model.predict(three_dmatrix)
+
+    qid_pid_prob_map = defaultdict(dict)
+    for i in range(len(train_qid_part_three)):
+        qid_pid_prob_map[train_qid_part_three[i]][train_pid_part_three[i]] = pred[i]
+        
+    sorted_qid_pid_prob_map = defaultdict(list) 
+    for qid, pid_prob_map in qid_pid_prob_map.items():
+        sorted_pids = sorted(pid_prob_map.items(), key=lambda x: x[1], reverse=True)
+        sorted_qid_pid_prob_map[qid] = sorted_pids    
+    
+    LM_AP = cal_AP(sorted_qid_pid_prob_map, train_validation_rel_dict)
+    LM_NDCG = cal_NDCG(sorted_qid_pid_prob_map, train_validation_rel_dict)
+    AP_list.append(LM_AP)
+    NDCG_list.append(LM_NDCG)
+    
+    mean_AP = np.mean(AP_list)
+    mean_NDCG = np.mean(NDCG_list)
+    # if mean_AP > best_AP:
+    #     best_AP = mean_AP
+    #     best_NDCG = mean_NDCG
+    #     best_eta = eta
+    #     best_gamma = gamma
+    #     best_min_child_weight = min_child_weight
+    #     best_max_depth = max_depth
+    
+    if mean_NDCG > best_NDCG:
+        best_AP = mean_AP
+        best_NDCG = mean_NDCG
+        best_eta = eta
+        best_gamma = gamma
+        best_min_child_weight = min_child_weight
+        best_max_depth = max_depth    
+    end()
+        
+
 # LR_AP = {lr:AP}
-LM_AP = cal_AP(sorted_qid_pid_prob_map, validation_rel_dict)
-LM_NDCG = cal_NDCG(sorted_qid_pid_prob_map, validation_rel_dict)
-print("LM_AP: ", LM_AP)
-print("LM_NDCG: ", LM_NDCG)
+LM_AP = best_AP
+LM_NDCG = best_NDCG
+print("BEST_LM_AP: ", LM_AP)
+print("BEST_LM_NDCG: ", LM_NDCG)
+print("BEST_eta: ", best_eta)
+print("BEST_gamma: ", best_gamma)
+print("BEST_min_child_weight: ", best_min_child_weight)
+print("BEST_max_depth: ", best_max_depth)
 
 # ============================================ LM.txt ============================================
 test_qid_terms = {}
@@ -330,8 +496,20 @@ std = np.std(qid_pid_X, axis=0)
 std += 1e-10
 qid_pid_X_normalized = (qid_pid_X - mean) / std
 
+params = {
+        # 'objective': 'rank:ndcg',
+        # 'objective': 'rank:map',
+        'objective': 'rank:pairwise',
+        'eta': best_eta,
+        'gamma': best_gamma,
+        'min_child_weight': best_min_child_weight,
+        'max_depth': best_max_depth
+    }
+xgb_model = xgb.train(params, train_dmatrix, num_boost_round=4,
+                    evals=[(valid_dmatrix, 'validation')], early_stopping_rounds=2)
+
 test_dmatrix = xgb.DMatrix(qid_pid_X_normalized)
-test_pred = xgb_model.predict(valid_dmatrix)
+test_pred = xgb_model.predict(test_dmatrix)
 
 test_qid_pid_prob_map = defaultdict(dict)
 test_sorted_qid_pid_prob_map = defaultdict(dict)
