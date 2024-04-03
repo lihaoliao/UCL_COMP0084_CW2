@@ -406,7 +406,7 @@ with open('NN.txt', 'w') as file:
         if row['qid'] != last_qid:
             rank = 1
         qid = int(row['qid'])
-        last_qid = qid
+        last_qid = row['qid']
         pid = int(row['pid'])
         score = float(row['prob'])
         file.write(f'{qid} A2 {pid} {rank} {score} NN\n')
